@@ -1,0 +1,2565 @@
+module top;
+	
+	//Import Packages
+	import ahb_apb_pkg::*;
+	import uvm_pkg::*;
+	
+	//Generate Clock
+	bit clock;
+	
+	initial
+	begin	
+		forever
+			#10 clock = ~clock;
+	end
+ 
+ //interface instantiation
+        ahb_if in0(clock);
+        apb_if in1(clock);
+        
+        
+        rtl_top duv(  .Hclk(clock),
+                     .Hresetn(in0.Hresetn),
+                     .Htrans(in0.Htrans),
+		    	.Hsize(in0.Hsize), 
+		    	.Hreadyin(in0.Hreadyin),
+		    	.Hwdata(in0.Hwdata), 
+		    	.Haddr(in0.Haddr),
+		    		.Hwrite(in0.Hwrite),
+       	.Prdata( in1.Prdata),
+		   	.Hrdata(in0.Hrdata),
+		   	.Hresp(in0.Hresp),
+		   	.Hreadyout(in0.Hreadyout),
+		   	.Pselx(in1.Pselx),
+	    	.Pwrite(in1.Pwrite),
+	    	.Penable(in1.Penable), 
+		     .Paddr(in1.Paddr),
+		   .Pwdata(in1.Pwdata)
+		    ) ;
+  
+  
+  initial
+	begin
+ 
+ 
+ 
+         `ifdef VCS
+         		$fsdbDumpvars(0, top);
+        		`endif
+           
+           
+           
+          uvm_config_db #(virtual ahb_if)::set(null, "*", "ahb_vif", in0);
+          uvm_config_db #(virtual apb_if)::set(null, "*", "apb_vif", in1);
+
+       // Call run_test
+	
+  
+          	run_test();
+	end
+ 
+ 
+ endmodule
+
+*************************************************************************************************************************
+
+package ahb_apb_pkg;
+
+    import uvm_pkg::*;
+	
+        `include "uvm_macros.svh"
+	`include "ahb_xtns.sv"
+	`include "ahb_agt_config.sv"
+	`include "apb_agt_config.sv"
+	`include "ahb_apb_env_config.sv"
+
+	`include "ahb_driver.sv"
+	`include "ahb_monitor.sv"
+	`include "ahb_sequencer.sv"
+	`include "ahb_agt.sv"
+	`include "ahb_agt_top.sv"
+	`include "ahb_seq.sv"
+
+	`include "apb_xtns.sv"
+  `include "apb_driver.sv"
+	`include "apb_monitor.sv"
+	`include "apb_sequencer.sv"
+	`include "apb_agt.sv"
+	`include "apb_agt_top.sv"
+	`include "apb_seq.sv"
+	
+  
+  `include "ahb_apb_v_sequencer.sv"
+  `include "ahb_apb_v_sequence.sv"
+  `include "ahb_apb_scoreboard.sv"
+	`include "ahb_apb_env.sv"
+	`include "ahb_apb_test.sv"
+	
+endpackage
+
+*******************************************************************************************************************
+
+class ahb_apb_test extends uvm_test;
+
+	`uvm_component_utils(ahb_apb_test)
+ 
+ 
+ 
+ 
+   ahb_apb_env env;
+	ahb_apb_env_config e_cfg;
+   
+  base_ahb_seq seq_ahb;
+  apb_seq seq_apb;
+  ahb_sequencer seqrh_ahb;
+  apb_sequencer seqrh_apb;
+  
+  ahb_apb_v_sequencer  v_seqr;
+  
+	ahb_agt_config ahb_cfg[];
+	apb_agt_config apb_cfg[];
+
+	bit has_ahb_agent=1;
+	bit has_apb_agent=1;
+	
+	int no_of_apb_agent=1;
+	int no_of_ahb_agent=1;
+
+	bit has_scoreboard = 1;
+  bit has_virtual_sequencer = 1;
+  
+  extern function new (string name="ahb_apb_test",uvm_component parent);
+	extern function void build_phase(uvm_phase phase);
+	extern function void config_ahb_apb();
+	extern function void end_of_elaboration_phase(uvm_phase phase);
+  //extern task run_phase(uvm_phase phase);
+endclass
+
+function ahb_apb_test::new(string name="ahb_apb_test",uvm_component parent);
+	super.new(name,parent);
+endfunction
+
+
+function void ahb_apb_test::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+	e_cfg = ahb_apb_env_config::type_id::create("e_cfg");
+
+	//create env_config object
+	if(has_ahb_agent)
+		e_cfg.ahb_agt_cfg=new[no_of_ahb_agent];
+	if(has_apb_agent)
+		e_cfg.apb_agt_cfg=new[no_of_apb_agent];
+	config_ahb_apb();
+
+	uvm_config_db #(ahb_apb_env_config)::set(this,"*","ahb_apb_env_config",e_cfg);
+	//creating obj of env
+	env=ahb_apb_env::type_id::create("env",this);
+  
+  
+
+endfunction
+
+
+
+
+function void ahb_apb_test::config_ahb_apb();
+	//creating src & rd agent 
+	if(has_ahb_agent)
+		begin
+			ahb_cfg=new[no_of_ahb_agent];
+			foreach(ahb_cfg[i])
+				begin
+					ahb_cfg[i]=ahb_agt_config::type_id::create($sformatf("ahb_cfg[%0d]",i));
+		
+					if(!uvm_config_db #(virtual ahb_if)::get(this,"","ahb_vif",ahb_cfg[i].vif))
+					  `uvm_fatal("VIF CONFIG- src","cannot get() interface from uvm_config_db.have you set() it?")
+	
+					ahb_cfg[i].is_active=UVM_ACTIVE;
+					e_cfg.ahb_agt_cfg[i]=ahb_cfg[i];
+				end
+		end
+
+
+ 	if(has_apb_agent)
+          	begin
+          		apb_cfg=new[no_of_apb_agent];
+          		foreach(apb_cfg[i])
+                		begin
+                          		apb_cfg[i]=apb_agt_config::type_id::create($sformatf("apb_cfg[%0d]",i));
+ 	
+        		                if(!uvm_config_db #(virtual apb_if)::get(this,"","apb_vif",apb_cfg[i].vif))
+                          			`uvm_fatal("VIF CONFIG- dst","cannot get() interface from uvm_config_db.have you set() it?")
+                           		
+					apb_cfg[i].is_active=UVM_ACTIVE;
+                          		e_cfg.apb_agt_cfg[i]=apb_cfg[i];
+ 				end
+ 		end
+
+	e_cfg.has_apb_agent=has_apb_agent;
+	e_cfg.has_ahb_agent=has_ahb_agent;
+	e_cfg.no_of_apb_agent=no_of_apb_agent;
+	e_cfg.no_of_ahb_agent=no_of_ahb_agent;
+	e_cfg.has_scoreboard = has_scoreboard;
+  e_cfg.has_virtual_sequencer = has_virtual_sequencer;
+endfunction
+
+
+function void ahb_apb_test::end_of_elaboration_phase(uvm_phase phase);
+	uvm_top.print_topology();
+  
+endfunction
+
+/*task ahb_apb_test::run_phase(uvm_phase phase);
+
+  seq_ahb=base_ahb_seq::type_id::create("seq_ahb");
+	phase.raise_objection(this);
+  fork
+  
+    begin
+      foreach(env.ahb_agt_toph.agnth[i])
+      seq_ahb.start(env.ahb_agt_toph.agnth[i].seqrh);
+    end
+
+  join
+ 	phase.drop_objection(this);
+endtask*/
+
+
+class single_test extends ahb_apb_test;
+
+  `uvm_component_utils(single_test)
+  
+  single_v_seq s_seq;
+  
+  extern function new (string name="single_test",uvm_component parent);
+	extern function void build_phase(uvm_phase phase);
+	extern task run_phase(uvm_phase phase);
+ 
+endclass
+
+
+function single_test::new(string name="single_test",uvm_component parent);
+	super.new(name,parent);
+endfunction
+
+function void single_test::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+endfunction
+
+task single_test::run_phase(uvm_phase phase);
+	phase.raise_objection(this);
+   repeat(10)
+     begin
+        
+         s_seq=single_v_seq::type_id::create("s_seq");
+         s_seq.start(env.v_seqr);
+         #100;
+     end
+  
+
+          
+    	phase.drop_objection(this);
+endtask
+
+
+class undef_test extends ahb_apb_test;
+
+  `uvm_component_utils(undef_test)
+  
+  undef_v_seq un_seq;
+  
+  extern function new (string name="undef_test",uvm_component parent);
+	extern function void build_phase(uvm_phase phase);
+	extern task run_phase(uvm_phase phase);
+ 
+endclass
+
+
+function undef_test::new(string name="undef_test",uvm_component parent);
+	super.new(name,parent);
+endfunction
+
+function void undef_test::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+endfunction
+
+task undef_test::run_phase(uvm_phase phase);
+	phase.raise_objection(this);
+ 
+    repeat(10)
+       begin
+           
+            un_seq=undef_v_seq::type_id::create("un_seq");
+            un_seq.start(env.v_seqr);
+            #120;
+       end
+
+          
+    	phase.drop_objection(this);
+endtask
+ 
+class inc_test extends ahb_apb_test;
+ 
+ `uvm_component_utils(inc_test)
+  
+  inc_v_seq i_seq;
+  
+  extern function new (string name="inc_test",uvm_component parent);
+	extern function void build_phase(uvm_phase phase);
+	extern task run_phase(uvm_phase phase);
+ 
+endclass
+
+
+function inc_test::new(string name="inc_test",uvm_component parent);
+	super.new(name,parent);
+endfunction
+
+function void inc_test::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+endfunction
+
+task inc_test::run_phase(uvm_phase phase);
+	phase.raise_objection(this);
+ 
+    repeat(10)
+     begin
+         
+           i_seq=inc_v_seq::type_id::create("i_seq");
+           i_seq.start(env.v_seqr);
+            #120;
+          end
+
+    	phase.drop_objection(this);
+endtask            
+
+
+class wrap_test extends ahb_apb_test;
+
+ `uvm_component_utils(wrap_test)
+  
+  wrap_v_seq w_seq;
+  
+  extern function new (string name="wrap_test",uvm_component parent);
+	extern function void build_phase(uvm_phase phase);
+	extern task run_phase(uvm_phase phase);
+ 
+endclass
+
+
+function wrap_test::new(string name="wrap_test",uvm_component parent);
+	super.new(name,parent);
+endfunction
+
+function void wrap_test::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+endfunction
+
+task wrap_test::run_phase(uvm_phase phase);
+	phase.raise_objection(this);
+         
+  repeat(10)
+    begin
+
+           w_seq=wrap_v_seq::type_id::create("w_seq");
+           w_seq.start(env.v_seqr);
+            #120;
+     end
+
+         
+    	phase.drop_objection(this);
+endtask
+
+*******************************************************************************************************
+
+# SIMULATOR = Questa for Mentor's Questasim
+# SIMULATOR = VCS for Synopsys's VCS
+
+SIMULATOR = VCS
+
+FSDB_PATH=/home/cad/eda/SYNOPSYS/VERDI_2022/verdi/T-2022.06-SP1/share/PLI/VCS/LINUX64
+
+
+RTL= ../rtl/* +define+WRAPPING_INCR
+work= work #library name
+SVTB1= ../tb/top.sv
+INC = +incdir+../tb +incdir+../test +incdir+../ahb_agt_top +incdir+../apb_agt_top
+SVTB2 = ../test/ahb_apb_pkg.sv
+VSIMOPT= -vopt -voptargs=+acc 
+VSIMCOV= -coverage -sva 
+VSIMBATCH1= -c -do  " log -r /* ;coverage save -onexit mem_cov1;run -all; exit"
+VSIMBATCH2= -c -do  " log -r /* ;coverage save -onexit mem_cov2;run -all; exit"
+VSIMBATCH3= -c -do  " log -r /* ;coverage save -onexit mem_cov3;run -all; exit"
+VSIMBATCH4= -c -do  " log -r /* ;coverage save -onexit mem_cov4;run -all; exit"
+
+
+help:
+	@echo =============================================================================================================
+	@echo "! USAGE   	--  make target                  								!"
+	@echo "! clean   	=>  clean the earlier log and intermediate files.  						!"
+	@echo "! sv_cmp    	=>  Create library and compile the code.           						!"
+	@echo "! run_test	=>  clean, compile & run the simulation for ahb_apd_test in batch mode.		!" 
+	@echo "! run_test1	=>  clean, compile & run the simulation for single_test in batch mode.			!" 
+	@echo "! run_test2	=>  clean, compile & run the simulation for undef_test in batch mode.			!"
+	@echo "! run_test3	=>  clean, compile & run the simulation for inc_test in batch mode.			!"
+	@echo "! run_test4      =>  clean, compile & run the simulation for wrap_test in batch mode.                    !"
+	@echo "! view_wave1 =>  To view the waveform of ahb_apb_test	    						!" 
+	@echo "! view_wave2 =>  To view the waveform of single_test	    						!" 
+	@echo "! view_wave3 =>  To view the waveform of undef_test 	  						!" 
+	@echo "! view_wave4 =>  To view the waveform of inc_test    							!"
+	@echo "! view_wave5 =>  To view the waveform of weap_test                                                        !"
+	@echo "! regress    =>  clean, compile and run all testcases in batch mode.		    				!"
+	@echo "! report     =>  To merge coverage reports for all testcases and  convert to html format.			!"
+	@echo "! cov        =>  To open merged coverage report in html format.							!"
+	@echo ====================================================================================================================
+
+clean 	   : clean_$(SIMULATOR)
+sv_cmp     : sv_cmp_$(SIMULATOR)
+run_test   : run_test_$(SIMULATOR)
+run_test1  : run_test1_$(SIMULATOR)
+run_test2  : run_test2_$(SIMULATOR)
+run_test3  : run_test3_$(SIMULATOR)
+run_test4  : run_test4_$(SIMULATOR)
+view_wave1 : view_wave1_$(SIMULATOR)
+view_wave2 : view_wave2_$(SIMULATOR)
+view_wave3 : view_wave3_$(SIMULATOR)
+view_wave4 : view_wave4_$(SIMULATOR)
+view_wave5 : view_wave5_$(SIMULATOR)
+regress    : regress_$(SIMULATOR)
+report     : report_$(SIMULATOR)
+cov        : cov_$(SIMULATOR)
+cov_txt : cov_txt_$(SIMULATOR)
+cov_html : cov_html_$(SIMULATOR)
+
+# ----------------------------- Start of Definitions for Mentor's Questa Specific Targets -------------------------------#
+
+sv_cmp_Questa:
+	vlib $(work)
+	vmap work $(work)
+	vlog -work $(work) $(RTL) $(INC) $(SVTB2) $(SVTB1) 	
+	
+run_test_Questa: sv_cmp
+	vsim -cvgperinstance $(VSIMOPT) $(VSIMCOV) $(VSIMBATCH1)  -wlf wave_file1.wlf -l test1.log  -sv_seed random  work.top +UVM_TESTNAME=router_test
+	vcover report  -cvg  -details -nocompactcrossbins -codeAll -assert -directive -html mem_cov1
+	
+run_test1_Questa: sv_cmp
+	vsim -cvgperinstance $(VSIMOPT) $(VSIMCOV) $(VSIMBATCH2)  -wlf wave_file2.wlf -l test2.log  -sv_seed random  work.top +UVM_TESTNAME=router_small_pkt_test
+	vcover report  -cvg  -details -nocompactcrossbins -codeAll -assert -directive -html mem_cov2
+	
+run_test2_Questa:
+	vsim -cvgperinstance $(VSIMOPT) $(VSIMCOV) $(VSIMBATCH3)  -wlf wave_file3.wlf -l test3.log  -sv_seed random  work.top +UVM_TESTNAME=router_medium_pkt_test
+	vcover report  -cvg  -details -nocompactcrossbins -codeAll -assert -directive -html mem_cov3
+	
+run_test3_Questa:
+	vsim -cvgperinstance $(VSIMOPT) $(VSIMCOV) $(VSIMBATCH4)  -wlf wave_file4.wlf -l test4.log  -sv_seed random  work.top +UVM_TESTNAME=router_big_pkt_test
+	vcover report  -cvg  -details -nocompactcrossbins -codeAll -assert -directive -html mem_cov4
+	
+view_wave1_Questa:
+	vsim -view wave_file1.wlf
+	
+view_wave2_Questa:
+	vsim -view wave_file2.wlf
+	
+view_wave3_Questa:
+	vsim -view wave_file3.wlf
+	
+view_wave4_Questa:
+	vsim -view wave_file4.wlf
+
+report_Questa:
+	vcover merge mem_cov mem_cov1 mem_cov2 mem_cov3 mem_cov4
+	vcover report -cvg -details -nocompactcrossbins -codeAll -assert -directive -html mem_cov
+
+regress_Questa: clean_Questa run_test_Questa run_test1_Questa run_test2_Questa run_test3_Questa report_Questa cov_Questa
+
+cov_Questa:
+	firefox covhtmlreport/index.html&
+	
+clean_Questa:
+	rm -rf transcript* *log* fcover* covhtml* mem_cov* *.wlf modelsim.ini work
+	clear
+
+# ----------------------------- End of Definitions for Mentor's Questa Specific Targets -------------------------------#
+
+# ----------------------------- Start of Definitions for Synopsys's VCS Specific Targets -------------------------------#
+
+sv_cmp_VCS:
+	vcs -l vcs.log -timescale=1ns/1ps -sverilog -ntb_opts uvm -debug_access+all -full64 -kdb  -lca -P $(FSDB_PATH)/novas.tab $(FSDB_PATH)/pli.a $(RTL) $(INC) $(SVTB2) $(SVTB1)
+		      
+run_test_VCS:	clean  sv_cmp_VCS
+	./simv -a vcs.log +fsdbfile+wave1.fsdb  -cm_dir ./mem_cov1 +ntb_random_seed_automatic  +UVM_TESTNAME=ahb_apb_test
+	
+run_test1_VCS:	clean  sv_cmp_VCS	
+	./simv -a vcs.log +fsdbfile+wave2.fsdb  -cm_dir ./mem_cov2 +ntb_random_seed_automatic  +UVM_TESTNAME=single_test urg -dir mem_cov2.vdb -format both -report urgReport2
+
+run_test2_VCS:	clean  sv_cmp_VCS
+	./simv -a vcs.log +fsdbfile+wave3.fsdb assert_enable_coverage=1 -cm_dir ./mem_cov3 +ntb_random_seed_automatic -assert +UVM_TESTNAME=undef_test urg -dir mem_cov3.vdb -format both -report urgReport3
+	
+run_test3_VCS:	clean  sv_cmp_VCS
+	./simv -a vcs.log +fsdbfile+wave4.fsdb assert_enable_coverage=1 -cm_dir ./mem_cov4 +ntb_random_seed_automatic -assert +UVM_TESTNAME=inc_test urg -dir mem_cov4.vdb -format both -report urgReport4
+	
+run_test4_VCS:  clean  sv_cmp_VCS
+	./simv -a vcs.log +fsdbfile+wave5.fsdb assert_enable_coverage=1 -cm_dir ./mem_cov5 +ntb_random_seed_automatic -assert +UVM_TESTNAME=wrap_test urg -dir mem_cov5.vdb -format both -report urgReport5
+
+view_wave1_VCS: 
+	verdi -ssf wave1.fsdb
+	
+view_wave2_VCS: 
+	verdi -ssf wave2.fsdb
+
+view_wave3_VCS: 
+	verdi -ssf wave3.fsdb
+
+view_wave4_VCS: 
+	verdi -ssf wave4.fsdb		
+
+view_wave5_VCS:
+	verdi -ssf wave5.fsdb
+	
+report_VCS:
+	urg -dir mem_cov1.vdb mem_cov2.vdb mem_cov3.vdb mem_cov4.vdb mem_cov5.vdb -dbname merged_dir/merged_test -format both -report urgReport
+
+regress_VCS: 	clean_VCS sv_cmp_VCS run_test_VCS run_test1_VCS run_test2_VCS run_test3_VCS run_test4_VCS report_VCS
+
+cov_VCS:
+	verdi -cov -covdir merged_dir.vdb
+cov_txt_VCS:
+	vi urgReport/grp*.txt
+cov_html_VCS:
+	firefox urgReport/grp*.html&
+clean_VCS:
+	rm -rf simv* csrc* *.tmp *.vpd *.vdb *.key *.log *hdrs.h urgReport* *.fsdb novas* verdi*
+	clear
+
+# ----------------------------- END of Definitions for Synopsys's VCS Specific Targets -------------------------------#
+
+
+
+**********************************************************************************************************************
+
+class ahb_apb_env extends uvm_env;
+
+	`uvm_component_utils(ahb_apb_env)
+
+	ahb_agt_top ahb_agt_toph;
+	apb_agt_top apb_agt_toph;
+
+	ahb_apb_env_config m_cfg;
+  
+  ahb_apb_scoreboard sb;
+   ahb_apb_v_sequencer v_seqr;
+   
+  
+ 
+	extern function new(string name = "ahb_apb_env", uvm_component parent);
+        extern function void build_phase(uvm_phase phase);
+        extern function void connect_phase(uvm_phase phase);
+endclass
+
+
+function ahb_apb_env::new(string name = "ahb_apb_env", uvm_component parent);
+        super.new(name,parent);
+endfunction
+
+//build_phase
+
+function void ahb_apb_env::build_phase(uvm_phase phase);
+	super.build_phase(phase);	
+	if(!uvm_config_db #(ahb_apb_env_config)::get(this,"","ahb_apb_env_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+
+    	if(m_cfg.has_ahb_agent)
+                begin
+    			ahb_agt_toph=ahb_agt_top::type_id::create("ahb_agt_toph",this);
+                end
+        
+	if(m_cfg.has_apb_agent)
+                begin
+    			apb_agt_toph=apb_agt_top::type_id::create("apb_agt_toph",this);
+                end
+                
+ if(m_cfg.has_virtual_sequencer)
+              v_seqr=ahb_apb_v_sequencer::type_id::create("v_seqr",this);
+     if(m_cfg.has_scoreboard)
+          sb=ahb_apb_scoreboard::type_id::create("sb",this);
+endfunction
+
+
+function void ahb_apb_env::connect_phase(uvm_phase phase);
+
+if(m_cfg.has_virtual_sequencer)
+	begin
+		if(m_cfg.has_ahb_agent)
+	            	begin
+		            for(int i=0;i<m_cfg.no_of_ahb_agent;i++)
+                   			begin
+		                  	v_seqr.ahb_seqr[i]=ahb_agt_toph.agnth[i].seqrh;
+		                   	end
+		end
+   
+ 
+
+	end
+ 
+  if(m_cfg.has_scoreboard)
+		begin
+   foreach(ahb_agt_toph.agnth[i])
+     begin
+  
+			    ahb_agt_toph.agnth[i].monh.ahb_mon_ap.connect(sb.fifo_ahb[i].analysis_export);
+      end
+      
+    foreach(apb_agt_toph.agnth[i])
+     
+      begin
+       
+			    apb_agt_toph.agnth[i].monh.apb_mon_d.connect(sb.fifo_apb[i].analysis_export);
+      end
+		end
+endfunction
+
+***********************************************************************************************************************
+
+class ahb_apb_env_config extends uvm_object;
+
+	`uvm_object_utils(ahb_apb_env_config)
+	
+	bit has_ahb_agent = 1;//agent tops
+	bit has_apb_agent = 1;//agent tops
+	
+	int  no_of_ahb_agent = 1;
+	int no_of_apb_agent = 1;
+	
+	bit has_virtual_sequencer = 1;
+
+	bit has_scoreboard = 1;
+  bit no_of_duts = 1;
+
+	ahb_agt_config ahb_agt_cfg[];
+	apb_agt_config apb_agt_cfg[];
+
+	extern function new(string name = "ahb_apb_env_config");
+
+endclass
+
+function ahb_apb_env_config::new(string name = "ahb_apb_env_config");
+	super.new(name);
+endfunction
+
+**********************************************************************************************************************
+
+class ahb_apb_scoreboard extends uvm_scoreboard;
+
+  `uvm_component_utils(ahb_apb_scoreboard)
+  
+  
+  uvm_tlm_analysis_fifo #(ahb_xtns) fifo_ahb[];
+	uvm_tlm_analysis_fifo #(apb_xtns) fifo_apb[];
+ 
+  ahb_xtns ahb_data;
+	apb_xtns apb_data;
+ 
+  ahb_xtns ahb_cov;
+	apb_xtns apb_cov;
+  
+  
+  ahb_apb_env_config e_cfg;
+  
+  ahb_xtns q[$]; //queue is used to push data ahb to apb to compare it with apb
+  
+  covergroup cg_ahb_cov;
+      option.per_instance = 1;
+      
+        SIZE  : coverpoint ahb_cov.Hsize {bins H1[] = {[0:2]};}  //1,2,4  byts of data
+        
+        TRANS:  coverpoint ahb_cov.Htrans {bins trans[] = {[2:3]} ;}//NS and S
+        
+        BURST: coverpoint ahb_cov.Hburst {bins burst[] = {[0:7]} ;}
+        
+        ADDR: coverpoint ahb_cov.Haddr {bins addr_1 = {[32'h8000_0000:32'h8000_03ff]} ;
+                                        bins addr_2 = {[32'h8400_0000:32'h8400_03ff]};
+                                        bins addr_3 = {[32'h8800_0000:32'h8800_03ff]};
+                                        bins  addr_4 = {[32'h8C00_0000:32'h8C00_03ff]};}
+                                                     
+  endgroup : cg_ahb_cov
+  
+   covergroup cg_apb_cov;
+      option.per_instance = 1;
+      
+            ADDR: coverpoint apb_cov.Paddr  {  bins addr_1 = {[32'h8000_0000:32'h8000_03ff]};
+                                               bins addr_2 = {[32'h8400_0000:32'h8400_03ff]};
+                                               bins addr_3 = {[32'h8800_0000:32'h8800_03ff]};
+                                               bins  addr_4 = {[32'h8C00_0000:32'h8C00_03ff]};}
+                                               
+           SEL : coverpoint apb_cov.Pselx {bins sel_1 = {4'b0001};
+                                           bins sel_2 = {4'b0010};
+                                           bins sel_3 = {4'b0100};
+                                           bins sel_4 = {4'b1000};}
+                                           
+   endgroup : cg_apb_cov
+                                 
+    
+  
+  
+  extern function new(string name="ahb_apb_scoreboard",uvm_component parent);
+  extern function void build_phase(uvm_phase phase);
+      extern task run_phase(uvm_phase phase);
+      extern task user_compare (apb_xtns h2);
+      
+      
+endclass
+
+function ahb_apb_scoreboard::new(string name="ahb_apb_scoreboard",uvm_component parent);
+   super.new(name,parent);
+   ahb_data = new();
+   apb_data = new();
+
+   cg_ahb_cov = new();
+   cg_apb_cov = new();
+   
+endfunction
+ 
+ 
+ function void ahb_apb_scoreboard::build_phase(uvm_phase phase);
+ 
+   super.build_phase(phase);
+        
+        
+        if(!uvm_config_db #(ahb_apb_env_config)::get(this, "", "ahb_apb_env_config", e_cfg))
+	          	`uvm_fatal("CONFIG", "Cannot get() e_cfg, have you set() it?")
+
+          fifo_ahb = new[e_cfg.no_of_ahb_agent];
+        	fifo_apb = new[e_cfg.no_of_apb_agent];
+         
+         
+         foreach(fifo_ahb[i])
+            		fifo_ahb[i] = new($sformatf("fifo_ahb[%0d]",i), this);
+            
+        	foreach(fifo_apb[i])
+                 	fifo_apb[i] = new($sformatf("fifo_apb[%0d]",i), this);
+                  
+             
+            	
+	
+endfunction
+
+
+
+task ahb_apb_scoreboard::run_phase(uvm_phase phase);
+
+	fork
+		
+		begin
+		forever
+			begin
+				fifo_ahb[0].get(ahb_data);
+				q.push_back(ahb_data);
+        `uvm_info("ahb_apb_scoreboard",$sformatf("ahb_data printing from scoreboard \n %s",ahb_data.sprint),UVM_LOW);
+ 
+			
+				ahb_cov = ahb_data;
+				cg_ahb_cov.sample();
+			end
+		end
+
+		begin
+		forever
+			begin		
+				fifo_apb[0].get(apb_data);
+        `uvm_info("ahb_apb_scoreboard",$sformatf("apb_data printing from scoreboard \n %s",apb_data.sprint),UVM_LOW);
+
+				user_compare(apb_data);
+				
+				apb_cov = apb_data;
+				cg_apb_cov.sample();
+			end
+		end
+
+
+	join
+ 
+ 	
+endtask
+
+
+
+task ahb_apb_scoreboard::user_compare(apb_xtns h2);
+
+     ahb_data = q.pop_front();
+     //$display("a1");
+     
+     if(ahb_data.Hwrite)
+         begin
+             if(ahb_data.Hsize==2'b00)
+                     begin
+                       if(ahb_data.Haddr[1:0] == 2'b00)
+                          begin
+                         if(ahb_data.Hwdata[7:0] == h2.Pwdata[7:0])
+                            begin
+                              `uvm_info("ahb_apb_scoreboard",$sformatf("Data  compare Successful HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          else
+                                begin
+                              `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                          end
+                         end
+                          
+                          if(ahb_data.Haddr[1:0] == 2'b01)
+                         begin
+                          if(ahb_data.Hwdata[15:8] == h2.Pwdata[7:0])
+                                begin
+                               `uvm_info("ahb_apb_scoreboard",$sformatf("Data  compare Successful HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          else
+                                begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          end
+                          
+                          if(ahb_data.Haddr[1:0] == 2'b10)
+                         begin
+                          if(ahb_data.Hwdata[23:16] == h2.Pwdata[7:0])
+                                begin
+                               `uvm_info("ahb_apb_scoreboard",$sformatf("Data  compare Successful HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          else
+                                begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          end
+                          
+                          if(ahb_data.Haddr[1:0] == 2'b11)
+                         begin
+                          if(ahb_data.Hwdata[31:24] == h2.Pwdata[7:0])
+                                begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data  compare Successful HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          else
+                                begin
+                               `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          end
+                          
+                      end
+                      
+                      
+                else if(ahb_data.Hsize==2'b01)
+                     begin
+                       if(ahb_data.Haddr[1:0] == 2'b00)
+                         begin
+                          if(ahb_data.Hwdata[15:0] == h2.Pwdata[15:0])
+                                begin
+                               `uvm_info("ahb_apb_scoreboard",$sformatf("Data  compare Successful HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          else
+                                begin
+                              `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          end
+                          
+                          if(ahb_data.Haddr[1:0] == 2'b10)
+                         begin
+                          if(ahb_data.Hwdata[31:16] == h2.Pwdata[15:0])
+                                begin
+                              `uvm_info("ahb_apb_scoreboard",$sformatf("Data  compare Successful HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                              end
+                          else
+                                begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          end            
+                       end
+                       
+                else if(ahb_data.Hsize==2'b10)
+                     begin
+                       if(ahb_data.Haddr[1:0] == 2'b00)
+                         begin
+                          if(ahb_data.Hwdata[31:0] == h2.Pwdata[31:0])
+                                begin
+                                `uvm_info("ahb_apb_scoreboard",$sformatf("Data  compare Successful HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          else
+                                begin
+                            `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HDATA=%0h and PDATA=%0h  \n",ahb_data.Hwdata,h2.Pwdata),UVM_LOW)
+                                end
+                          end
+                          
+                     end
+                end
+
+     else
+         //read data compar
+          begin
+            if(ahb_data.Hsize==2'b00)
+                    begin
+                      if(ahb_data.Haddr[1:0] == 2'b00)
+                        begin
+                         if(ahb_data.Hrdata[7:0] == h2.Prdata[7:0])
+                           begin
+                               `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare  Successful HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+                               end
+                         else
+                               begin
+                            `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+	 
+                               end
+                         end
+                      
+                         
+                         if(ahb_data.Haddr[1:0] == 2'b01)
+                        begin
+                         if(ahb_data.Hrdata[7:0] == h2.Prdata[15:8])
+                               begin
+                                `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare  Successful HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+                               end
+                         else
+                               begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+	 
+                               end
+                         end
+                      
+                         
+                         if(ahb_data.Haddr[1:0] == 2'b10)
+                        begin
+                         if(ahb_data.Hrdata[7:0] == h2.Prdata[23:16])
+                               begin
+                               `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare  Successful HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+                               end
+                         else
+                               begin
+                            `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+	 
+                               end
+                         end
+                      
+                         
+                         if(ahb_data.Haddr[1:0] == 2'b11)
+                        begin
+                         if(ahb_data.Hrdata[7:0] == h2.Prdata[31:24])
+                               begin
+                                `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare  Successful HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+                               end
+                         else
+                               begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+	 
+                               end
+                         end
+                         
+                     end
+                     
+                     
+               else if(ahb_data.Hsize==2'b01)
+                    begin
+                      if(ahb_data.Haddr[1:0] == 2'b00)
+                        begin
+                         if(ahb_data.Hrdata[15:0] == h2.Prdata[15:0])
+                               begin
+                                `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare  Successful HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+                               end
+                         else
+                               begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+	 
+                               end
+                         end
+                      
+                         
+                         if(ahb_data.Haddr[1:0] == 2'b10)
+                        begin
+                         if(ahb_data.Hrdata[15:0] == h2.Prdata[31:16])
+                               begin
+                               `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare  Successful HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+                               end
+                         else
+                               begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+	 
+                               end
+                         end            
+                      end
+                      
+               else if(ahb_data.Hsize==2'b10)
+                    begin
+                      if(ahb_data.Haddr[1:0] == 2'b00)
+                        begin
+                         if(ahb_data.Hrdata[31:0] == h2.Prdata[31:0])
+                               begin
+                                `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare  Successful HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+                               end
+                         else
+                               begin
+                             `uvm_info("ahb_apb_scoreboard",$sformatf("Data compare Failure HRDATA=%0h and PRDATA=%0h  \n",ahb_data.Hrdata,h2.Prdata),UVM_LOW)
+	 
+                               end
+                         end
+                         
+                    end 
+                    
+                end     
+endtask
+
+
+***********************************************************************************************************************
+
+class ahb_apb_v_sequence extends uvm_sequence;
+
+  `uvm_object_utils(ahb_apb_v_sequence)
+  
+  ahb_sequencer  ahb_seqr[];
+  //apb_sequencer apb_seqr[];
+  
+  ahb_apb_v_sequencer v_seqr;
+  ahb_apb_env_config m_cfg;
+  
+  
+  extern function new(string name="ahb_apb_v_sequence");
+  
+  extern task body();
+  
+  
+endclass
+
+function ahb_apb_v_sequence::new(string name="ahb_apb_v_sequence");
+   super.new(name);
+endfunction
+
+task ahb_apb_v_sequence::body();
+
+       if(!uvm_config_db #(ahb_apb_env_config)::get(null,get_full_name(),"ahb_apb_env_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+    		 
+		
+		    ahb_seqr = new[m_cfg.no_of_ahb_agent];
+		   // apb_seqr = new[m_cfg.no_of_apb_agent];
+            
+            
+            assert($cast(v_seqr,m_sequencer))
+              else
+              	begin
+              	`uvm_error("body","error in $cast of virtual sequencer")
+              	end
+             
+             
+              foreach(ahb_seqr[i])
+                     begin
+              	        ahb_seqr[i]=v_seqr.ahb_seqr[i];
+                     end
+             /* foreach(apb_seqr[i])
+                     begin
+                        apb_seqr[i]=v_seqr.apb_seqr[i];
+                      end*/
+              
+endtask
+
+
+    
+class single_v_seq extends ahb_apb_v_sequence;
+	
+  `uvm_object_utils(single_v_seq)
+  
+  single_ahb_seq  single_seq;
+  
+  extern function new(string name="single_v_seq");
+	extern task body();
+endclass
+
+function single_v_seq::new(string name="single_v_seq");
+	super.new(name);
+endfunction
+
+
+task single_v_seq::body();
+      
+      super.body();
+
+        if(m_cfg.has_ahb_agent)
+        begin
+               single_seq =single_ahb_seq::type_id::create("single_seq");
+                single_seq.start(ahb_seqr[0]);
+        end
+
+endtask
+
+
+class undef_v_seq extends ahb_apb_v_sequence;
+	
+  `uvm_object_utils(undef_v_seq)
+  
+  undef_ahb_seq  undef_seq;
+  
+  extern function new(string name="undef_v_seq");
+	extern task body();
+endclass
+
+function undef_v_seq::new(string name="undef_v_seq");
+	super.new(name);
+endfunction
+
+
+task undef_v_seq::body();
+      
+      super.body();
+
+        if(m_cfg.has_ahb_agent)
+        begin
+               undef_seq =undef_ahb_seq::type_id::create("undef_seq");
+                undef_seq.start(ahb_seqr[0]);
+        end
+
+endtask
+
+class inc_v_seq extends ahb_apb_v_sequence;
+	
+  `uvm_object_utils(inc_v_seq)
+  
+  inc_ahb_seq  inc_seq;
+  
+  extern function new(string name="inc_v_seq");
+	extern task body();
+endclass
+
+function inc_v_seq::new(string name="inc_v_seq");
+	super.new(name);
+endfunction
+
+
+task inc_v_seq::body();
+      
+      super.body();
+
+        if(m_cfg.has_ahb_agent)
+        begin
+               inc_seq =inc_ahb_seq::type_id::create("inc_seq");
+                inc_seq.start(ahb_seqr[0]);
+        end
+
+endtask
+
+
+class wrap_v_seq extends ahb_apb_v_sequence;
+	
+  `uvm_object_utils(wrap_v_seq)
+  
+  wrap_ahb_seq  wrap_seq;
+  
+  extern function new(string name="wrap_v_seq");
+	extern task body();
+endclass
+
+function wrap_v_seq::new(string name="wrap_v_seq");
+	super.new(name);
+endfunction
+
+
+task wrap_v_seq::body();
+      
+      super.body();
+
+        if(m_cfg.has_ahb_agent)
+        begin
+               wrap_seq =wrap_ahb_seq::type_id::create("wrap_seq");
+                wrap_seq.start(ahb_seqr[0]);
+        end
+
+endtask
+
+
+**********************************************************************************************************************
+
+class ahb_apb_v_sequencer extends uvm_sequencer;
+
+  `uvm_component_utils(ahb_apb_v_sequencer)
+  
+  
+   ahb_sequencer  ahb_seqr[];
+  apb_sequencer apb_seqr[];
+  
+  ahb_apb_env_config m_cfg;
+  
+  
+  extern function new(string name="ahb_apb_v_sequencer",uvm_component parent);
+  extern function void build_phase(uvm_phase phase);
+  
+endclass
+
+function ahb_apb_v_sequencer::new(string name="ahb_apb_v_sequencer",uvm_component parent);
+   super.new(name,parent);
+endfunction
+
+function void ahb_apb_v_sequencer::build_phase(uvm_phase phase);
+
+        if(!uvm_config_db #(ahb_apb_env_config)::get(this,"","ahb_apb_env_config",m_cfg))
+		`uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+    		 super.build_phase(phase);
+		
+		    ahb_seqr = new[m_cfg.no_of_ahb_agent];
+		    apb_seqr = new[m_cfg.no_of_apb_agent];
+
+    		
+	endfunction
+
+
+*********************************************************************************************************************
+
+class ahb_agt_top extends uvm_env;
+	
+	`uvm_component_utils(ahb_agt_top)
+
+	ahb_agt agnth[];
+
+	ahb_apb_env_config m_cfg;
+
+	extern function new (string name="ahb_agt_top",uvm_component parent);
+	extern function void build_phase(uvm_phase phase);
+
+endclass
+
+//constructor new
+
+function ahb_agt_top::new(string name="ahb_agt_top",uvm_component parent);
+        super.new(name,parent);
+endfunction
+
+
+//builb method
+
+
+function void ahb_agt_top::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+	if(!uvm_config_db #(ahb_apb_env_config)::get(this,"","ahb_apb_env_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+
+	agnth = new[m_cfg.no_of_ahb_agent];
+
+ 	foreach(agnth[i])
+        	begin
+                	// set ahb_agent_config into the database using the
+                        // ahb_apb_env_config's ahb_agent_config object
+			agnth[i]=ahb_agt::type_id::create($sformatf("agnth[%0d]",i) ,this);
+
+                        uvm_config_db #(ahb_agt_config)::set(this,$sformatf("agnth[%0d]*",i),  "ahb_agt_config", m_cfg.ahb_agt_cfg[i]);
+                                        
+                end
+endfunction
+
+
+********************************************************************************************************************
+
+class ahb_agt extends uvm_agent;
+
+        // Factory Registration
+        `uvm_component_utils(ahb_agt)
+
+        // Declare handle for configuration object
+        ahb_agt_config m_cfg;
+
+            ahb_monitor monh;
+        ahb_sequencer seqrh;
+        ahb_driver drvh;
+
+        extern function new(string name = "ahb_agt", uvm_component parent = null);
+        extern function void build_phase(uvm_phase phase);
+        extern function void connect_phase(uvm_phase phase);
+
+endclass
+
+
+// constructor new
+
+function ahb_agt::new(string name = "ahb_agt",uvm_component parent = null);
+        super.new(name,parent);
+endfunction
+
+
+
+// build method
+
+function void ahb_agt::build_phase(uvm_phase phase);
+
+        super.build_phase(phase);
+        // get the config object using uvm_config_db
+        if(!uvm_config_db #(ahb_agt_config)::get(this,"","ahb_agt_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+                monh=ahb_monitor::type_id::create("monh",this);
+        if(m_cfg.is_active==UVM_ACTIVE)
+                begin
+                        drvh=ahb_driver::type_id::create("drvh",this);
+                        seqrh=ahb_sequencer::type_id::create("seqrh",this);
+                end
+
+endfunction
+
+
+
+//  connect  method
+
+function void ahb_agt::connect_phase(uvm_phase phase);
+        if(m_cfg.is_active==UVM_ACTIVE)
+                begin
+                        drvh.seq_item_port.connect(seqrh.seq_item_export);
+                end
+endfunction
+
+**********************************************************************************************************************
+
+class ahb_agt_config extends uvm_object;
+
+	`uvm_object_utils(ahb_agt_config)
+	
+	virtual ahb_if vif;
+	static int drv_data_count = 0;
+	static int mon_data_count = 0;
+
+	uvm_active_passive_enum is_active = UVM_ACTIVE;
+
+	extern function new(string name = "ahb_agt_config");
+
+endclass
+
+
+
+//  constructor new 
+
+function ahb_agt_config::new(string name = "ahb_agt_config");
+  	super.new(name);
+endfunction
+
+*********************************************************************************************************************
+
+class ahb_driver extends uvm_driver #(ahb_xtns);
+
+	`uvm_component_utils(ahb_driver)
+
+	virtual ahb_if.AHB_DRV_MP vif;
+	ahb_agt_config m_cfg;
+  ahb_xtns xtn;
+  //methods
+  
+ 	extern function new(string name ="ahb_driver",uvm_component parent);
+ 	extern function void build_phase(uvm_phase phase);
+	extern function void connect_phase(uvm_phase phase);
+ 	extern task run_phase(uvm_phase phase);
+  extern task send_to_dut(ahb_xtns xtn);
+  extern function void report_phase(uvm_phase phase);
+endclass
+
+
+
+// constructor new method
+
+function ahb_driver::new(string name ="ahb_driver",uvm_component parent);
+	super.new(name,parent);
+endfunction
+
+
+
+//build phase 
+
+function void ahb_driver::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+ 
+ xtn=ahb_xtns::type_id::create("xtn");
+        // get the config object using uvm_config_db
+        if(!uvm_config_db #(ahb_agt_config)::get(this,"","ahb_agt_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+endfunction
+
+//connect phase
+
+function void ahb_driver::connect_phase(uvm_phase phase);
+
+  vif=m_cfg.vif;
+  
+endfunction
+
+task ahb_driver::run_phase(uvm_phase phase);
+
+      //reset logic
+      
+      @(vif.ahb_drv_cb);
+      vif.ahb_drv_cb.Hresetn<=1'b0;
+      @(vif.ahb_drv_cb);
+      vif.ahb_drv_cb.Hresetn<=1'b1;
+      
+      forever
+        
+        begin
+        
+          seq_item_port.get_next_item(req);
+          //user define task calling
+          send_to_dut(req);
+          seq_item_port.item_done();
+          
+        end
+         
+endtask
+
+
+task ahb_driver::send_to_dut(ahb_xtns xtn);
+
+//	@(vif.ahb_drv_cb);     
+     vif.ahb_drv_cb.Htrans<=xtn.Htrans;
+     vif.ahb_drv_cb.Haddr<=xtn.Haddr;
+     vif.ahb_drv_cb.Hsize<=xtn.Hsize;
+     vif.ahb_drv_cb.Hwrite<=xtn.Hwrite;
+      vif.ahb_drv_cb.Hburst<=xtn.Hburst;
+     vif.ahb_drv_cb.Hreadyin<=1'b1;
+     
+
+     @(vif.ahb_drv_cb);
+   
+     @(vif.ahb_drv_cb);
+       
+     while(!vif.ahb_drv_cb.Hreadyout)
+       @(vif.ahb_drv_cb);
+       
+  
+     if(xtn.Hwrite)
+       vif.ahb_drv_cb.Hwdata<=xtn.Hwdata;
+     else
+       vif.ahb_drv_cb.Hwdata<=32'd0;
+      
+      @(vif.ahb_drv_cb); 
+       m_cfg.drv_data_count++;
+       
+    
+     
+      `uvm_info("ahb_driver",$sformatf("printing from ahb_driver  \n %s",xtn.sprint()),UVM_LOW)
+      
+endtask
+
+//report_phase
+
+function void ahb_driver::report_phase(uvm_phase phase);
+
+   `uvm_info("CONFIG",$sformatf("report.ahb_driver sent %0d transaction",m_cfg.drv_data_count),UVM_LOW);
+   
+endfunction
+
+
+
+**************************************************************************************************************
+
+class ahb_monitor extends uvm_monitor;
+
+	`uvm_component_utils(ahb_monitor)
+
+	virtual ahb_if.AHB_MON_MP vif;
+	ahb_agt_config m_cfg;
+  uvm_analysis_port #(ahb_xtns) ahb_mon_ap;
+  ahb_xtns xtn;
+
+  //methods
+ 	extern function new(string name ="ahb_monitor",uvm_component parent);
+ 	extern function void build_phase(uvm_phase phase);
+	extern function void connect_phase(uvm_phase phase);
+  extern task run_phase(uvm_phase phase);
+  extern task collect_data();
+  extern function void report_phase(uvm_phase phase);
+  
+ 	
+
+endclass
+
+
+
+//constructor new method
+function ahb_monitor::new(string name ="ahb_monitor",uvm_component parent);
+	super.new(name,parent);
+ // create object for handle ap_s using new
+  ahb_mon_ap=new("ahb_mon_ap",this);
+endfunction
+
+
+
+//build_phase
+function void ahb_monitor::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+   
+        if(!uvm_config_db #(ahb_agt_config)::get(this,"","ahb_agt_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+endfunction
+
+
+//connect_phase
+
+function void ahb_monitor::connect_phase(uvm_phase phase);
+
+      vif=m_cfg.vif;
+
+endfunction
+
+task ahb_monitor::run_phase(uvm_phase phase);
+
+    forever
+      begin
+        collect_data(); 
+      end
+
+endtask
+
+task ahb_monitor::collect_data();
+
+  xtn=ahb_xtns::type_id::create("xtn");
+  
+  while(!(vif.ahb_mon_cb.Hreadyout && (vif.ahb_mon_cb.Htrans == 2'b10 | vif.ahb_mon_cb.Htrans == 2'b11 | vif.ahb_mon_cb.Htrans == 2'b00)))
+    @(vif.ahb_mon_cb);
+    
+   xtn.Htrans = vif.ahb_mon_cb.Htrans;
+   xtn.Hwrite = vif.ahb_mon_cb.Hwrite;
+   xtn.Hsize  = vif.ahb_mon_cb.Hsize;
+   xtn.Haddr  = vif.ahb_mon_cb.Haddr;
+   xtn.Hburst = vif.ahb_mon_cb.Hburst;
+   
+    @(vif.ahb_mon_cb)
+     @(vif.ahb_mon_cb); 
+    
+  while(!vif.ahb_mon_cb.Hreadyout)
+    @(vif.ahb_mon_cb);
+    
+   
+    
+   @(vif.ahb_mon_cb)
+   if(vif.ahb_mon_cb.Hwrite == 1'b1)        
+        	xtn.Hwdata = vif.ahb_mon_cb.Hwdata;
+  	else
+	      	xtn.Hrdata = vif.ahb_mon_cb.Hrdata;
+        
+		        
+   
+   `uvm_info("ahb_moniter",$sformatf("printing from ahb monitor  \n %s",xtn.sprint()),UVM_LOW)
+     
+       ahb_mon_ap.write(xtn);
+        
+       m_cfg.mon_data_count++;
+endtask
+
+//report_phase
+
+function void ahb_monitor::report_phase(uvm_phase phase);
+
+   `uvm_info("CONFIG",$sformatf("report.ahb_moniter sent %0d transaction",m_cfg.mon_data_count),UVM_LOW);
+   
+endfunction
+
+
+*******************************************************************************************************************
+
+class base_ahb_seq extends uvm_sequence #(ahb_xtns);
+
+ `uvm_object_utils(base_ahb_seq)
+    
+    
+    bit [31:0] haddr;
+    
+    bit hwrite;
+    
+    bit [1:0] hsize;
+    
+    bit [2:0] hburst;
+ 
+extern function new(string name="base_ahb_seq");
+
+
+endclass
+
+function base_ahb_seq::new(string name="base_ahb_seq");
+   super.new(name);
+endfunction
+
+/************single*****************************/
+
+class single_ahb_seq extends base_ahb_seq;
+
+    `uvm_object_utils(single_ahb_seq)
+    
+    
+    extern function new(string name="single_ahb_seq");
+    extern task body();
+    
+endclass
+
+function single_ahb_seq::new(string name="single_ahb_seq");
+   super.new(name);
+endfunction
+
+task single_ahb_seq::body();
+
+   req = ahb_xtns::type_id::create("req");
+   
+   begin
+     start_item(req);
+     
+     assert(req.randomize() with {Htrans == 2'b10; Hwrite == 1'b1; Hburst == 3'b000;});
+     
+     finish_item(req);
+     
+     
+   end
+   
+   
+   //storeing xtn varuables to local variables
+   
+   
+        haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+        
+        
+endtask
+
+/*********************undefind***********************/
+class undef_ahb_seq extends base_ahb_seq;
+
+
+   `uvm_object_utils(undef_ahb_seq)
+    
+    
+    extern function new(string name="undef_ahb_seq");
+    extern task body();
+    
+endclass
+
+function undef_ahb_seq::new(string name="undef_ahb_seq");
+   super.new(name);
+endfunction
+
+task undef_ahb_seq::body();
+
+   req = ahb_xtns::type_id::create("req");
+   
+   begin
+     start_item(req);
+     
+     assert(req.randomize() with {Htrans == 2'b10; Hwrite == 1'b1; Hburst == 3'b001;});
+     
+     finish_item(req);
+     
+     
+   end
+  
+   
+   
+   //storeing xtn varuables to local variables
+   
+   
+       haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+  
+   /***************unspecified length ***********/
+  
+        if(hburst == 3'b001)
+          
+            begin
+            
+              for(int i=0; i<req.length-1;i++)
+              
+                begin
+                
+                  start_item(req);
+                  
+                  if(hsize == 2'b00)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+1'b1;});
+                  
+                    end
+                    
+                    
+                  if(hsize == 2'b01)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+2'b10;});
+                  
+                    end
+                    
+                    if(hsize == 2'b10)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+3'b100;});
+                  
+                    end
+                    
+                    finish_item(req);
+                    
+                      haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+        
+                    
+                  end
+              end
+endtask    
+/************************increment*********************/
+
+class inc_ahb_seq extends base_ahb_seq;
+
+
+   `uvm_object_utils(inc_ahb_seq)
+    
+    
+    extern function new(string name="inc_ahb_seq");
+    extern task body();
+    
+endclass
+
+function inc_ahb_seq::new(string name="inc_ahb_seq");
+   super.new(name);
+endfunction
+
+task inc_ahb_seq::body();
+
+   req = ahb_xtns::type_id::create("req");
+   
+   begin
+     start_item(req);
+     
+     assert(req.randomize() with {Htrans == 2'b10; Hwrite == 1'b1; Hburst inside {3,5,7};});
+     
+     finish_item(req);
+     
+     
+   end
+   
+   
+   //storeing xtn varuables to local variables
+   
+   
+        haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+        
+        /***************inc-4***********/
+        
+        if(hburst == 3'b011)
+          
+            begin
+            
+              for(int i=0; i<3;i++)
+              
+                begin
+                
+                  start_item(req);
+                  
+                  if(hsize == 2'b00)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+               
+                    end
+                    
+                    
+                  if(hsize == 2'b01)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+                  
+                    end
+                    
+                    if(hsize == 2'b10)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite;Haddr == haddr+(2**hsize);});
+                
+                    end
+                    
+                    finish_item(req);
+                    
+                    
+                            haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+                    
+                  end
+              end
+              
+              
+              
+          /***************inc-8***********/
+        
+        if(hburst == 3'b101)
+          
+            begin
+            
+              for(int i=0; i<7;i++)
+              
+                begin
+                
+                  start_item(req);
+                  
+                  if(hsize == 2'b00)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+                 
+                    end
+                    
+                    
+                    
+                  if(hsize == 2'b01)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+                  
+                    end
+                    
+                    if(hsize == 2'b10)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+                 
+                    end
+                    
+                    finish_item(req);
+                    
+                            haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+                    
+                  end
+              end
+              
+          
+          /***************inc-16***********/
+        
+        if(hburst == 3'b111)
+          
+            begin
+            
+              for(int i=0; i<15;i++)
+              
+                begin
+                
+                  start_item(req);
+                  
+                  if(hsize == 2'b00)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+                 
+                    end
+                    
+                    
+                  if(hsize == 2'b01)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+               
+                    end
+                    
+                    if(hsize == 2'b10)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == haddr+(2**hsize);});
+                
+                    end
+                    
+                    finish_item(req);
+                    
+                            haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+                    
+                  end
+              end
+        
+endtask
+     
+/************************wrap*********************/
+
+class wrap_ahb_seq extends base_ahb_seq;
+
+
+   `uvm_object_utils(wrap_ahb_seq)
+    
+    
+    extern function new(string name="wrap_ahb_seq");
+    extern task body();
+    
+endclass
+
+function wrap_ahb_seq::new(string name="wrap_ahb_seq");
+   super.new(name);
+endfunction
+
+task wrap_ahb_seq::body();
+
+   req = ahb_xtns::type_id::create("req");
+   
+   begin
+     start_item(req);
+     
+     assert(req.randomize() with {Htrans == 2'b10; Hwrite == 1'b1; Hburst  inside {2,4,6}; }); // Hburst 
+     
+     finish_item(req);
+     
+     
+   end
+   
+   
+   //storeing xtn varuables to local variables
+   
+   
+        haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;       
+        
+       /***************wrap-4***********/
+        
+        if(hburst == 3'b010)
+          
+            begin
+            
+              for(int i=0; i<3;i++)
+              
+                begin
+                
+                  start_item(req);
+                  
+                  if(hsize == 2'b00)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr =={haddr[31:2], {haddr[1:0] + 1'b1}};});
+                  
+                    end
+                    
+                    
+                  if(hsize == 2'b01)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == {haddr[31:3], {haddr[2:0] + 2'b10}};});
+                  
+                    end
+                    
+                    if(hsize == 2'b10)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == {haddr[31:4], {haddr[3:0] + 3'b100}};});
+                  
+                    end
+                    
+                    finish_item(req);
+                    
+                      haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+        
+                    
+                  end
+              end
+        
+       /***************wrap-8***********/
+        
+        if(hburst == 3'b100)
+          
+            begin
+            
+              for(int i=0; i<7;i++)
+              
+                begin
+                
+                  start_item(req);
+                  
+                  if(hsize == 2'b00)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr =={haddr[31:2], haddr[1:0] + 1'b1};});
+                  
+                    end
+                    
+                    
+                  if(hsize == 2'b01)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == {haddr[31:3], haddr[2:0] + 2'b10};});
+                  
+                    end
+                    
+                    if(hsize == 2'b10)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == {haddr[31:4], haddr[3:0] + 3'b100};});
+                  
+                    end
+                    
+                    finish_item(req);
+                    
+                      haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+        
+                    
+                  end
+              end
+        
+       /***************wrap-16***********/
+        
+        if(hburst == 3'b110)
+          
+            begin
+            
+              for(int i=0; i<15;i++)
+              
+                begin
+                
+                  start_item(req);
+                  
+                  if(hsize == 2'b00)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr =={haddr[31:2], haddr[1:0] + 1'b1};});
+                  
+                    end
+                    
+                    
+                  if(hsize == 2'b01)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == {haddr[31:3], haddr[2:0] + 2'b10};});
+                  
+                    end
+                    
+                    if(hsize == 2'b10)
+                  
+                    begin
+                    
+                      assert(req.randomize() with { Hsize == hsize; Hburst == hburst; Htrans == 2'b11; Hwrite == hwrite; Haddr == {haddr[31:4], haddr[3:0] + 3'b100};});
+                  
+                    end
+                    
+                    finish_item(req);
+                    
+                      haddr = req.Haddr;
+        hsize = req.Hsize;
+        hburst = req.Hburst;
+        hwrite = req.Hwrite;
+        
+                    
+                  end
+              end
+        
+endtask     
+        
+        
+        
+        
+*********************************************************************************************************************
+
+class ahb_sequencer extends uvm_sequencer #(ahb_xtns);
+
+	// Factory registration using `uvm_component_utils
+        `uvm_component_utils(ahb_sequencer)
+
+	// Standard UVM Methods:
+        extern function new(string name = "ahb_sequencer",uvm_component parent);
+endclass
+
+
+//  constructor new 
+function ahb_sequencer::new(string name="ahb_sequencer",uvm_component parent);
+        super.new(name,parent);
+endfunction
+
+*************************************************************************************************************************
+
+class ahb_xtns extends uvm_sequence_item;
+        `uvm_object_utils(ahb_xtns)
+        
+        bit Hresetn;
+        
+        rand bit Hwrite;
+        
+        rand bit [1:0] Htrans;
+        
+        rand bit [2:0] Hburst;
+        
+        rand bit [2:0] Hsize;
+        
+        rand bit [31:0] Haddr;
+        
+        rand bit [31:0] Hwdata;
+        
+        bit [31:0] Hrdata;
+        
+        bit [1:0] Hresp;
+        
+        bit Hreadyin;
+        
+        bit Hreadyout;
+        
+        rand bit [9:0] length;
+        
+        
+        constraint valid_Hsize {Hsize inside {[0:2]};} //0,1,2
+        
+        constraint valid_Haddr {Hsize == 1 -> Haddr%2 == 0;
+                                Hsize == 2 -> Haddr%4 == 0;}
+                                
+        constraint valid_length { (2^Hsize)*length <= 1024;}
+        
+        constraint Haddr_range { Haddr inside {[32'h8000_0000 : 32'h8000_03ff],
+                                               [32'h8400_0000 : 32'h8400_03ff],
+                                               [32'h8800_0000 : 32'h8800_03ff],
+                                               [32'h8c00_0000 : 32'h8c00_03ff]};}
+                                               
+        constraint hwrite_valid { Hwrite inside {0,1};}
+        
+        
+       //methods
+        
+        extern function void do_print(uvm_printer printer);
+        
+endclass
+
+function void ahb_xtns::do_print(uvm_printer printer);
+
+      super.do_print(printer);
+      
+      //printer.print_field( string_name,value,size,radix)
+      
+      printer.print_field("Hwrite", this.Hwrite, 1, UVM_HEX);
+      printer.print_field("Htrans", this.Htrans, 2, UVM_HEX);
+	    printer.print_field("Hburst", this.Hburst, 3, UVM_HEX);
+      printer.print_field("Hsize",  this.Hsize,  2, UVM_HEX);
+      printer.print_field("Haddr",  this.Haddr,  32, UVM_HEX);
+      printer.print_field("Hwdata", this.Hwdata, 32, UVM_HEX);
+      printer.print_field("Hrdata", this.Hrdata, 32, UVM_HEX);
+     // printer.print_field("length", this.length, 32, UVM_HEX);
+      
+endfunction
+
+
+*********************************************************************************************************************
+
+class apb_agt_top extends uvm_env;
+	
+	`uvm_component_utils(apb_agt_top)
+
+	apb_agt agnth[];
+
+	ahb_apb_env_config m_cfg;
+
+	extern function new (string name="apb_agt_top",uvm_component parent);
+	extern function void build_phase(uvm_phase phase);
+
+endclass
+
+//constructor new
+
+function apb_agt_top::new(string name="apb_agt_top",uvm_component parent);
+        super.new(name,parent);
+endfunction
+
+
+//builb method
+
+
+function void apb_agt_top::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+	if(!uvm_config_db #(ahb_apb_env_config)::get(this,"","ahb_apb_env_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+
+	agnth = new[m_cfg.no_of_apb_agent];
+
+ 	foreach(agnth[i])
+        	begin
+                	// set apb_agent_config into the database using the
+                        // ahb_apb_env_config's apb_agent_config object
+			agnth[i]=apb_agt::type_id::create($sformatf("agnth[%0d]",i) ,this);
+
+                        uvm_config_db #(apb_agt_config)::set(this,$sformatf("agnth[%0d]*",i),  "apb_agt_config", m_cfg.apb_agt_cfg[i]);
+                                        
+                end
+endfunction
+
+
+**********************************************************************************************************************
+
+class apb_agt extends uvm_agent;
+
+   	// Factory Registration
+        `uvm_component_utils(apb_agt)
+
+   	// Declare handle for configuration object
+    	apb_agt_config m_cfg;
+
+	    apb_monitor monh;
+        apb_sequencer seqrh;
+        apb_driver drvh;
+
+	extern function new(string name = "apb_agt", uvm_component parent = null);
+        extern function void build_phase(uvm_phase phase);
+        extern function void connect_phase(uvm_phase phase);
+
+endclass 
+
+
+// constructor new 
+
+function apb_agt::new(string name = "apb_agt",uvm_component parent = null);
+        super.new(name,parent);
+endfunction
+
+
+
+// build method
+
+function void apb_agt::build_phase(uvm_phase phase);
+
+        super.build_phase(phase);
+   	// get the config object using uvm_config_db
+        if(!uvm_config_db #(apb_agt_config)::get(this,"","apb_agt_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+	        monh=apb_monitor::type_id::create("monh",this);
+        if(m_cfg.is_active==UVM_ACTIVE)
+                begin
+                        drvh=apb_driver::type_id::create("drvh",this);
+                        seqrh=apb_sequencer::type_id::create("seqrh",this);
+                end
+
+endfunction
+
+
+
+//  connect  method 
+
+function void apb_agt::connect_phase(uvm_phase phase);
+ 	if(m_cfg.is_active==UVM_ACTIVE)
+                begin
+                        drvh.seq_item_port.connect(seqrh.seq_item_export);
+                end
+endfunction
+
+
+****************************************************************************************************************
+
+class apb_agt_config extends uvm_object;
+
+	`uvm_object_utils(apb_agt_config)
+	
+	virtual apb_if vif;
+	static int drv_data_count = 0;
+	static int mon_data_count = 0;
+
+	uvm_active_passive_enum is_active = UVM_ACTIVE;
+
+	extern function new(string name = "apb_agt_config");
+
+endclass
+
+
+
+//  constructor new 
+
+function apb_agt_config::new(string name = "apb_agt_config");
+  	super.new(name);
+endfunction
+
+
+**********************************************************************************************************************
+
+class apb_driver extends uvm_driver #(apb_xtns);
+
+	`uvm_component_utils(apb_driver)
+
+	virtual apb_if.APB_DRV_MP vif;
+	apb_agt_config m_cfg;
+  apb_xtns xtn;
+  //methods
+  
+ 	extern function new(string name ="apb_driver",uvm_component parent);
+ 	extern function void build_phase(uvm_phase phase);
+	extern function void connect_phase(uvm_phase phase);
+ 	extern task run_phase(uvm_phase phase);
+  extern task send_to_dut(apb_xtns xtn);
+ 	extern function void report_phase(uvm_phase phase);
+
+
+endclass
+
+
+
+// constructor new method
+
+function apb_driver::new(string name ="apb_driver",uvm_component parent);
+	super.new(name,parent);
+endfunction
+
+
+
+//build phase 
+
+function void apb_driver::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+        // get the config object using uvm_config_db
+        if(!uvm_config_db #(apb_agt_config)::get(this,"","apb_agt_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+endfunction
+
+//connect phase
+
+function void apb_driver::connect_phase(uvm_phase phase);
+
+  vif=m_cfg.vif;
+  
+endfunction
+
+//run phase
+
+task apb_driver::run_phase(uvm_phase phase);
+
+//xtn = apb_xtns::type_id::create("xtn", this);
+
+    
+    forever
+         begin
+          
+          //user define task calling
+          send_to_dut(req);
+
+        end
+endtask
+
+
+
+task apb_driver::send_to_dut(apb_xtns xtn);
+
+xtn = apb_xtns::type_id::create("xtn", this);
+		
+
+      while(!vif.apb_drv_cb.Pselx)
+        @(vif.apb_drv_cb);
+       
+
+      if(!vif.apb_drv_cb.Pwrite) 
+          vif.apb_drv_cb.Prdata <= {$random};
+          
+        repeat(2)
+           @(vif.apb_drv_cb);
+           
+        while(!vif.apb_drv_cb.Penable)
+          @(vif.apb_drv_cb);
+        
+        
+        m_cfg.drv_data_count++;
+        
+   // `uvm_info("apb_driver",$sformatf("printing from apb driver  \n %s",xtn.sprint()),UVM_LOW)
+        
+endtask
+        
+
+//report_phase
+
+function void apb_driver::report_phase(uvm_phase phase);
+
+   `uvm_info("CONFIG",$sformatf("report.apb_driver sent %0d transaction",m_cfg.drv_data_count),UVM_LOW);
+   
+endfunction
+
+
+*********************************************************************************************************************
+
+class apb_monitor extends uvm_monitor;
+
+	`uvm_component_utils(apb_monitor)
+
+	virtual apb_if.APB_MON_MP vif;
+	apb_agt_config m_cfg;
+  uvm_analysis_port #(apb_xtns) apb_mon_d;
+  apb_xtns xtn;
+
+  //methods
+ 	extern function new(string name ="apb_monitor",uvm_component parent);
+ 	extern function void build_phase(uvm_phase phase);
+	extern function void connect_phase(uvm_phase phase);
+  extern task run_phase(uvm_phase phase);
+  extern task collect_data;
+  extern function void report_phase(uvm_phase phase);
+ 	
+
+endclass
+
+
+
+//constructor new method
+function apb_monitor::new(string name ="apb_monitor",uvm_component parent);
+	super.new(name,parent);
+ // create object for handle ap_s using new
+  apb_mon_d=new("apb_mon_d",this);
+endfunction
+
+
+
+//build_phase
+function void apb_monitor::build_phase(uvm_phase phase);
+	super.build_phase(phase);
+   
+        if(!uvm_config_db #(apb_agt_config)::get(this,"","apb_agt_config",m_cfg))
+                `uvm_fatal("CONFIG","cannot get() m_cfg from uvm_config_db. Have you set() it?")
+endfunction
+
+
+//connect_phase
+
+function void apb_monitor::connect_phase(uvm_phase phase);
+
+      vif=m_cfg.vif;
+endfunction
+
+// run phase
+
+task apb_monitor::run_phase(uvm_phase phase);
+
+        forever
+                begin
+                        collect_data();
+                end
+endtask
+
+
+
+task apb_monitor::collect_data();
+        
+        xtn = apb_xtns::type_id::create("xtn");
+        
+         while(!(vif.apb_mon_cb.Penable && vif.apb_mon_cb.Pselx))
+            @(vif.apb_mon_cb);
+                xtn.Paddr = vif.apb_mon_cb.Paddr;
+                xtn.Pwrite = vif.apb_mon_cb.Pwrite; 
+                xtn.Pselx = vif.apb_mon_cb.Pselx;
+                
+                 @(vif.apb_mon_cb);
+                
+        if(xtn.Pwrite == 1)
+		xtn.Pwdata = vif.apb_mon_cb.Pwdata; //collect data
+        else
+                xtn.Prdata = vif.apb_mon_cb.Prdata; 
+                
+	repeat(2)
+        @(vif.apb_mon_cb);
+        
+        m_cfg.mon_data_count++;
+        
+        apb_mon_d.write(xtn);
+        
+        `uvm_info("apb_moniter",$sformatf("printing from apb moniter  \n %s",xtn.sprint()),UVM_LOW)
+
+
+endtask
+
+//report_phase
+
+function void apb_monitor::report_phase(uvm_phase phase);
+
+   `uvm_info("CONFIG",$sformatf("report.apb_moniter sent %0d transaction",m_cfg.mon_data_count),UVM_LOW);
+   
+endfunction
+
+
+
+****************************************************************************************************************************
+class apb_seq extends uvm_sequence;
+
+ `uvm_object_utils(apb_seq)
+ 
+extern function new(string name="apb_seq");
+
+endclass
+
+function apb_seq::new(string name="apb_seq");
+   super.new(name);
+endfunction
+
+***************************************************************************************************************************
+
+class apb_sequencer extends uvm_sequencer #(apb_xtns);
+
+	// Factory registration using `uvm_component_utils
+        `uvm_component_utils(apb_sequencer)
+
+	// Standard UVM Methods:
+        extern function new(string name = "apb_sequencer",uvm_component parent);
+endclass
+
+
+//  constructor new 
+function apb_sequencer::new(string name="apb_sequencer",uvm_component parent);
+        super.new(name,parent);
+endfunction
+
+***********************************************************************************************************************
+
+class apb_xtns extends uvm_sequence_item;
+        `uvm_object_utils(apb_xtns)
+        
+        
+        bit Penable;
+        
+        bit Pwrite; 
+
+        bit [31:0] Prdata;
+
+        bit [31:0] Pwdata;
+
+        bit [31:0] Paddr;
+
+        bit [3:0] Pselx;
+        
+        //methods
+        
+        
+        extern function void do_print(uvm_printer printer);
+        
+endclass
+
+
+function void apb_xtns::do_print(uvm_printer printer);
+
+        super.do_print(printer);
+        
+        //printer.print_field( string_name,value,size,radix)
+        
+        printer.print_field("Paddr", this.Paddr, 32, UVM_HEX);
+        printer.print_field("Pselx", this.Pselx, 4, UVM_HEX);
+        printer.print_field("Pwrite", this.Pwrite, 1, UVM_HEX);
+        printer.print_field("Penable", this.Penable, 1, UVM_HEX);
+        printer.print_field("Prdata", this.Prdata, 32, UVM_HEX);
+	      printer.print_field("Pwdata", this.Pwdata, 32, UVM_HEX);
+
+endfunction
+
+************************************************************************************************************************
+
