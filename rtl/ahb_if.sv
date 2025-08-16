@@ -4,41 +4,31 @@ interface ahb_if(input bit clock);
 
   
      logic Hresetn;
-     
      logic [31:0] Haddr;
-     
      logic [1:0] Htrans;
-     
      logic Hwrite;
-     
      logic [2:0] Hsize;
-     
      logic [2:0] Hburst;
-     
      logic [31:0] Hwdata;
-     
      logic [31:0] Hrdata;
-     
      logic [1:0] Hresp;
-     
      logic Hreadyin;
-     
      logic Hreadyout;
      
      
-     
+    
      //AHB driver clocking block:
         clocking ahb_drv_cb@(posedge clock);
                 default input #1 output #1;
                                 output Hwrite;
                                 output Hreadyin;
-								                output Hwdata;
+								output Hwdata;
                                 output Haddr;
                                 output Htrans;
                                 output Hburst;
                                 output Hresetn;
                                 output Hsize;
-								                input Hrdata;
+								input Hrdata;
                                 input Hreadyout;
                                 input  Hresp;
         endclocking
@@ -56,13 +46,28 @@ interface ahb_if(input bit clock);
                                 input Hresetn;
                                 input Hsize;
                                 input Hreadyout;
-				                        input Hrdata;
+				                input Hrdata;
                                 input  Hresp;
         endclocking
-  parameter SINGLE = 3'b000, INCR4 = 3'b011, WRAP4 = 3'b010, INCR8 = 3'b101, WRAP8 = 3'b100, INCR16 = 3'b111, WRAP16 = 3'b110;
-      parameter IDLE = 2'b00, BUSY = 2'b01, NON_SEQ = 2'b10, SEQ = 2'b11;
+
+
+	
+      parameter SINGLE   =    3'b000, 
+	            INCR4    =    3'b011, 
+	            WRAP4    =    3'b010, 
+	            INCR8    =    3'b101,
+	            WRAP8    =    3'b100,
+	            INCR16   =    3'b111,
+	            WRAP16   =    3'b110;
+	
+      parameter IDLE    =  2'b00,
+	            BUSY    =  2'b01,
+	            NON_SEQ =  2'b10,
+	            SEQ     =  2'b11;
       
-            
+
+   /////////////////// assertions	//////////////////////////////////////////////////////////////////
+	
      property master_nowait_single;
       	@(posedge clock) disable iff(( !Hresetn ))
       	
@@ -72,9 +77,12 @@ interface ahb_if(input bit clock);
       SINGLE_XTN: assert property (master_nowait_single)
                        $display("Assertions Success", $time);
 	                 else
-	                    	$display("Assertions Failed", $time);
+	                   $display("Assertions Failed", $time);
+
+
+		  
       
-      
+      ///////////////////////////////////////////////////////////////////////////////////////////////////
       property master_nowait_incr4_wrap4; //if 
       	@(posedge clock) disable iff(( !Hresetn ) ||  
 	                            ( ( Htrans == IDLE ) ||
@@ -88,7 +96,7 @@ interface ahb_if(input bit clock);
 	                 else
 	                    	$display("Assertions Failed", $time);
                                              
-                                             
+       ///////////////////////////////////////////////////////////////////////////////////////////////////                                      
       property master_nowait_incr8_wrap8; //if
         @(posedge clock) disable iff(( !Hresetn ) ||
                                     ( ( Htrans == IDLE ) ||
@@ -103,7 +111,10 @@ interface ahb_if(input bit clock);
                        $display("Assertions Success", $time);
 	                 else
 	                    	$display("Assertions Failed", $time);
-      
+
+
+		  
+      ///////////////////////////////////////////////////////////////////////////////////////////////////
       property master_nowait_incr16_wrap16; //if
         @(posedge clock) disable iff(( !Hresetn ) ||
                                     ( ( Htrans == IDLE ) ||
@@ -113,11 +124,16 @@ interface ahb_if(input bit clock);
           ( Hburst == INCR16 || Hburst == WRAP16)   && ( Htrans == NON_SEQ )  ##1  ( ( Htrans == SEQ ) ) [*15] |-> 1;
       endproperty
 
+		  
+
      INCR16_WRAP16: assert property (master_nowait_incr16_wrap16)
      
                           $display("Assertions Success", $time);
 	                 else
 	                    	$display("Assertions Failed", $time);
+
+
+	///////////////////////////////////////////////////////////////////////////////////////////////////	 
      
      sequence count_four1;
         	( ( Hreadyout ) && ( Htrans == SEQ ) && ( ( Hburst == WRAP4 ) ||( Hburst == INCR4 ) ) ) [->3] ;
@@ -143,7 +159,9 @@ interface ahb_if(input bit clock);
                      $display("Assertions Success", $time);
 	                 else
 	                    	$display("Assertions Failed", $time);
-    
+    ///////////////////////////////////////////////////////////////////////////////////////////////////
+
+		
         
         modport AHB_DRV_MP (clocking ahb_drv_cb);
         modport AHB_MON_MP (clocking ahb_mon_cb);
