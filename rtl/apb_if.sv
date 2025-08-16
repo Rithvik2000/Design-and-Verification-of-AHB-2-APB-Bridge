@@ -2,16 +2,11 @@ interface apb_if (input logic clock);
 
 
         logic Penable;
-        
         logic [31:0] Paddr;
-        
         logic  Pwrite;
-        
         logic [31:0] Prdata;
-        
         logic [31:0] Pwdata;
-        
-         logic [3:0] Pselx;
+        logic [3:0] Pselx;
          
          
          //ahb driver
@@ -37,6 +32,11 @@ interface apb_if (input logic clock);
                 input Paddr;
                 input Pwdata;
         endclocking
+
+
+//////////////////////////////////// assertions /////////////////////////////////////////////	
+
+	
 property only_one_bit_high_Psel;
        
         @(posedge clock)  (Pselx == 4'b0000 || Pselx == 4'b1000 || Pselx == 4'b0100 || Pselx == 4'b0010 || Pselx == 4'b0001);
@@ -61,6 +61,9 @@ endproperty
 
      ADDR_CHANGE_PENABLE_HIGH: assert property (after_addr_change_penable_high);
 
+
+		 
+///////////////////////////////////////////////////////////////////////////////////////////////
 	//modport
  
  
